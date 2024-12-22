@@ -1,0 +1,1066 @@
+---
+title: "Principal Component Analysis of Ten Social Evaluation Questions for Synthetic Voices"
+author: "Ashley R Keaton"
+format: 
+  html:
+    code-fold: true
+date: "`r Sys.Date()`"
+editor: visual
+echo: false
+knitr:
+  opts_knit:
+    root.dir: "/Users/ashro/Documents/Dissertation Experiment Results/Chapter2_human_and_synthetic_voices"
+---
+
+#### Required Packages and Options
+
+```{r}
+#| echo: false
+#| message: false
+library(tidyverse)
+library(ggfortify)
+library(stats)
+library(googlesheets4)
+library(brms)
+library(bmmb)
+options(contrasts = rep("contr.sum", 2))
+
+#you may need to reinstall bmmb periodically after updating r or rstudoio
+#library(devtools)
+#devtools::install_github("https://github.com/santiagobarreda/bmmb.git")
+```
+
+# 
+
+##model alpha meaning## #a = hundred #b = thirty #c = zero #d = seventy (ref)
+
+# Data
+
+# Participant Pool Selection
+
+##### Perceived age outliers
+
+Participants that had outlier responses to perceived age were excluded from the study. This was calculated for this data (since the google voices are different voices, therefore the mean age might be different).
+
+```{r}
+#|
+#| collapse = TRUE
+setwd("../data/")
+human_computer_df_no_exclusions <- read_csv("human_computer_4levels_5-27-24.csv")
+
+age_data = 
+  human_computer_df_no_exclusions |>
+  filter(rating_metric == "Perceived_Age")
+
+#calculate mean and sd
+mean = mean(age_data$participant_rating)
+sd = sd(age_data$participant_rating)
+#calculate age cutoffs
+youngestsd3 = mean - sd*3
+oldestsd3 = mean + sd*3
+
+#histogram with normal dist of ages
+ggplot(age_data, aes(participant_rating)) +
+  geom_histogram(aes(y = after_stat(density)), 
+                 fill='lightgray', col='black', binwidth = 5, linewidth = 0.5) +
+  xlab("Age in Years") +
+  geom_vline(aes(xintercept = mean + sd*2),
+             colour = "blue", linewidth = 1) +
+  geom_vline(aes(xintercept = mean - sd*2),
+             colour = "blue", linewidth = 1) + 
+    geom_vline(aes(xintercept = mean + sd*3),
+             colour = "red", linewidth = 1) +
+  geom_vline(aes(xintercept = mean - sd*3),
+             colour = "red", linewidth = 1) +
+  stat_function(fun = dnorm, args = 
+                  list(mean=mean(age_data$participant_rating), 
+                       sd=sd(age_data$participant_rating)), 
+                linewidth = 1) +
+  theme_bw()
+```
+
+### Concatenate and eradicate all excluded ids
+
+```{r}
+#answer for any perceived age question was less than 1 or greater than 75
+age_outliers <-
+  age_data |>
+  filter(participant_rating < 1 | participant_rating >= 75) |>
+  select(id)
+
+#didn't complete experiment
+not_finished <- c(326065, 354502, 355669, 343807, 355858, 359242, 
+  363352, 346627, 355327, 351868, 353830, 358423)
+
+#duration was excluded if greater than 3 hours
+too_long <- c(355819, 348124, 326065, 339397, 361081)
+
+#incorrect answer to SPIN question (happened to be only "about the roast".)
+wrong_roast <- c(302617, 325777)
+
+#answered yes to hearing difficulty
+hearing_difficulty <- c(359344, 343684, 335776, 320800, 357493)
+
+#strongest language other than english 
+strongest_language_not_english <- c(325777, 335782, 341908, 364831, 349696, 327160, 355750, 359449, 336940, 360967, 348124, 339397)
+
+#concatenate all types of exclusions together
+excluded_ids <- unique(
+  unlist(
+  c(age_outliers, not_finished, too_long, wrong_roast, 
+    hearing_difficulty, strongest_language_not_english)))
+
+#confirm this is a dataframe of a length that is sensible
+check_excluded_ids <-
+  human_computer_df_no_exclusions |>
+  group_by(id) |>
+  filter(!id %in% excluded_ids)
+#write_csv(check_excluded_ids, "check.csv")
+#because I haven't looked at this data in such a long time, I opened it in excel and manually checked that every single id that was in the 'excluded_ids' list was truly excluded. 
+```
+
+## Data after all exclusions
+
+```{r}
+#| message: false
+setwd("../data/")
+human_computer_df <- 
+  read_csv("human_computer_4levels_5-27-24.csv") |>
+  filter(!id %in% excluded_ids)
+write_csv(human_computer_df, "human_computer_df.csv")
+```
+
+# this is an identical copy of the working draft from chapter 3
+
+# Current Study
+
+> The design for this study was modeled after the classic "sociolinguistic monitor" studies by Labov et al. (2006, 2011). In those studies, Labov et al. found that participants rated a female speaker as less professional and less appropriate for a news broadcasting position when she used the nonstandard -in variant (for example, *talkin'*). We expect to find this same pattern in our study, and predict that synthetic voices will also be evaluated as less appropriate and less professional when they use the nonstandard variant.
+
+Participants (n= They rated the voices one-at-a-time immediately after listening to the recording for each voice. Participants were not informed whether the voices they were hearing would be synthetic or human voices. At the end of the study after they had heard all four voices, participants listened to a brief clip of each voice again and selected whether they thought it was human or computer.
+
+We collected listeners' social evaluations on ten rating categories. Participants answered each rating question one at a time on a sliding scale from 0 to 100. They used the sliding scale to answer the following questions:
+
+1.  How professional is this voice?
+2.  How intelligent is this voice?
+3.  Is this voice good for a news broadcasting position?
+4.  How trustworthy is this voice?
+5.  How authentic is this voice?
+6.  How friendly is this voice?
+7.  How natural is this voice?
+8.  How old does this voice sound?
+9.  How vividly were you able to mentally imagine the person who was speaking?
+10. How much did you feel the voice was talking to you specifically?
+
+Questions nine and ten were adapted from the "social presence" questionnaire developed by Nass and Brave (2005) and assess how "real" a synthetic voice sounded. For brevity, questions nine and ten are referred to as the "social presence" questions in the discussion below.
+
+Prior sociolinguistic research has shown that social-indexical traits can be highly covariant, and that listeners socially evaluate a speaker on a field of related traits rather than each trait being evaluated independently of the others (Eckert, 2008). In the current study, we find that every rating metric is significantly correlated (p \< 0.001), suggesting that the variables are highly co-linear.
+
+# Results
+
+## Principal Component Analysis
+
+Principal Component Analysis (PCA) is an unsupervised machine learning technique that reduces high-dimensional data into a smaller set of component parts. PCA is an ideal choice for understanding relationships between variables when there is a high degree of co-linearity and when the variance in the data can be well-explained by a small number of dimensions, especially when the number of observations is relatively small compared to the number of variables. PCA does not predict the response variable; it estimates the relationships between a participant's evaluation of each rating metric.
+
+Principal components are rank-ordered based on the direction of the data that have the most variance. The first principal component accounts for the greatest amount of variance, the second principal component accounts for the second-greatest amount of variance, and so on. The total number of principal components that can be estimated is equal to the number of predictors.
+
+##### PCA math
+
+```{r}
+#| echo: false
+#library(stats)
+#create pca dataframe = contains only the (percent) rating metrics and their numerical values
+human_computer_pca <- 
+  human_computer_model_df |>
+  pivot_wider(names_from = rating_metric, 
+              values_from = participant_rating, 
+              id_cols = c(id,voice)) |>
+  select(!c(voice, id))
+
+pca_results <- prcomp(human_computer_pca, scale = TRUE)
+pca_results$x <- -1*pca_results$x
+pca_results$rotation <- -1*pca_results$rotation
+#rotates values from the negative (default in r)
+  #statology told me to do this
+# pca_results$x prints the rotation for each observation (6440x10), so this is not useful to report in a table.
+# pca_results$rotation prints the observations summarized by each rating metric (10x10). This would probably be useful only to people like Santiago, so it is included as a table in the Appendix. 
+```
+
+### Variance explained by each principal component
+
+Figure 2 depicts what percentage of the variance in the data is explained by each principal component. The amount of variance explained by the principal components is relative to how many principal components have been estimated; here, it is apparent that the first principal component explains a large amount of the variance (55.05%) out of a possible ten components. The second principal component explains 12.18% of the variance. The third principal component explains 9.73% of the variance. The fourth to tenth principal components each explain a marginal amount of variance in the data, and visual inspection of the biplot between principal components 3 and 4 (Figure B in the Appendix) suggests that the fourth principal component does not meaningfully change the groupings of the evaluation categories compared to the first through third components. The percentage of variance explained by each of the ten principal components is displayed in Table B of the Appendix.
+
+```{r}
+#library(stats)
+#library(plyr)
+#library(ddply)
+#library(ggplot)
+var_explained_df <- data.frame(Principal_Component = paste0("PC",1:10),
+                               Variance_Explained = 
+                                 (pca_results$sdev)^2/sum((pca_results$sdev)^2))
+var_explained_df %>%
+  ggplot(aes(x=Principal_Component,y=Variance_Explained, group=1)) +
+  geom_point(size=4, color = "darkgreen") +
+  geom_line(color = "darkgreen", alpha = .8) +
+  scale_x_discrete(limits=
+                     c("PC1", "PC2", "PC3", "PC4", "PC5", 
+                       "PC6", "PC7", "PC8", "PC9", "PC10")) +
+  labs(title="Scree plot: PCA on scaled data",
+       y = "Percent variance explained", 
+       x = "Principal Component") +
+  theme_bw()
+```
+
+#### Figure 2. Variance explained
+
+Percentage variance explained by each principal component.
+
+### Dimension Reduction of Rating Metrics
+
+**Explain the Graphs and how to read them**
+
+Because PCA can only estimate directions, the researcher is required to interpret what the resulting dimensions mean. Figure 2 depicts the eigenvector loadings for the directions of the first two principal components.
+
+The first principal component explains 55.05% of the variance in the data and is primarily responsible for the grouping distinction between "perceived age" and the other rating metrics.
+
+The second principal component explains 12.18% of the variance in the data and appears to group the rating metrics into three categories: status, solidarity, and credibility. Status refers to the social prestige that a speaker carries, which explains the relationship between the intelligence and professionalism rating metrics. The second principal component closely relates perceived age to professionalism and intelligence as well, which may be consistent with the notion that older speakers have higher social status. The second principal component also closely related trustworthiness and appropriateness for a news broadcasting position. Pycha and Zellou (2024) found that listeners vary in how credible they consider a synthetic voice based on its regional accent, and here we propose trustworthiness and appropriateness are congruent to listeners' perceptions of credibility in the Pycha and Zellou (2024) study. Lastly, the second principal component also closely groups naturalness, friendliness, and authenticity, as well as the two social presence questions. We suggest these related rating metrics are indices of how much a listener felt the speaker socially aligned with them, which can be thought of as solidarity with the speaker (Lambert et al., 1960).
+
+More generally, the PCA loadings and the resulting grouping of the social evaluation questions are in line with previous research on social categorization of synthetic voices (Lilley et al., under review; Nass and Brave, 2005; Pycha and Zellou, 2024).
+
+```{r}
+#library(ggplot)
+#library(ggfortify)
+autoplot(pca_results, scale = TRUE, loadings = TRUE, loadings.label = TRUE, 
+         loadings.color = "darkgreen", loadings.label.color = "navy", 
+         loadings.label.size = 4, loadings.label.hjust = -0.1, 
+         color = "NA", fill = "coral", shape = 21,  alpha = 0.9) +
+  theme_bw()
+# biplot(pca_results) works equivalently, but I use autoplot() for ggplot options. 
+```
+
+#### Figure 2. Biplot of PC1 and PC2
+
+The third principal component groups the rating metrics into three categories: age, social traits, and humanlikeness. Principal component three reflects a close relationship between authenticity, naturalness, and the two social presence questions. The social presence questions were developed to test how "real" a computer voice sounded, so it makes sense that they would cluster together with naturalness and authenticity. In theory, the "authenticity" of a voice could be interpreted to mean whether the voice is "real" (as in humanlike) or "truthful," and the relationship between variables in principal component three suggests that listeners interpreted "authenticity" as congruent to "real." Principal component three also clusters intelligence, professionalism, appropriateness, and trustworthiness together. These evaluation characteristics are social traits and relate to a listener's belief about a speaker's personal qualities. In the third principal component, friendliness becomes more closely related to trustworthiness and appropriateness compared to PC2. The changing direction of friendliness along the three princpal components suggests that it is evaluated distinctly from the other social characteristics, and is likely the closest measure of solidarity in this study.
+
+Listener evaluation of perceived age appears to vary independently of the social traits and humanlikeness groupings. Figure 3 shows the relationship between the first and third principal components. Note that the x-axis represents the first principal component, which has not changed from Figure 2. To view a plot of principal components two and three, see Figure A in the Appendix.
+
+```{r}
+autoplot(pca_results, x = 3, y = 2, scale = TRUE, loadings = TRUE, loadings.label = TRUE, 
+         loadings.color = "darkgreen", loadings.label.color = "navy", 
+         loadings.label.size = 4, loadings.label.hjust = -0.1, 
+         color = "NA", fill = "coral", shape = 21,  alpha = 0.9) +
+  theme_bw()
+```
+
+#### Figure 3. Biplot of PC2 and PC3
+
+### Reduction into Indexical Fields
+
+The principal component analysis makes it clear that some rating metrics are closely co-linear and likely suggest those rating metrics likely address the same social evaluation. For example, it is clear that "trustworthiness" and "appropriateness for news broadcasting" are clustered together based on both PC2 and PC3, which provides strong support that those two rating questions occupy the same indexical field in the mind of the listener.
+
+Because the main aim of this study is not to evaluate "trustworthiness" per se but rather the broader indexical associations associated with the -ing variable, it is beneficial to collapse the rating metrics into meaningful groups rather than ten interrelated categories. This results in more observations per indexical field and increases the generalizability of the results. In fact, by aggregating responses to questions that were shown to be semantically equivalent in the PCA it decreases the likelihood of finding false positive effects; if "trustworthiness" and "appropriateness" both represent an underlying judgement of credibility but "trustworthiness" happens to appear statistically meaningful and "appropriateness" does not, this could lead to the incorrect interpretation that variation in -ing usage affects listeners' evaluations of credibility.
+
+We considered the first, second, and third principal components in clustering the ten rating metrics into indexical fields. This resulted in five social evaluation categories, which can be seen in Table 2. "Friendliness" remains its own evaluation category because its position between the 2nd and 3rd principal components situate it with two different groups of evaluations, whereas the other nine rating metrics remained consistent in their clustering across PC2 and PC3.
+
+```{r}
+collapsed_metrics = c("Intelligence, Professionalism", "Appropriateness", "Trustworthiness", "Naturalness, Vividness, Specificity, Authenticity", "Friendliness", "Perceived Age")
+indexical_evaluation = c("Status", "Appropriateness", "Trustworthiness", "Humanlikeness", "Friendliness", "Perceived Age")
+
+pca_collapsing_df <- data.frame(indexical_evaluation, collapsed_metrics)
+print(pca_collapsing_df)
+```
+
+There are two approaches we can take to account for the co-linearity of the rating metrics: 1) modeling the two rating metrics together as the indexical field, or 2) including the co-linear rating metrics in the same regression model, and testing if there is an interaction effect between the two rating metrics.
+
+## Bayesian Regression Modeling
+
+We used the {brms} package in r to model the data (Burkner, 2017).
+
+#### Zero-One Inflated Beta (ZOIB) Regression
+
+Beta regression is an appropriate choice for sliding-scale data because participant responses are unlikely to be normally distributed for two reasons: 1.), the scale is bounded at 0 and 100, and 2.), participant responses to sliding scales tend to be skewed (Vuorre, 2019). Beta regression is a model of data in the open (0,1) interval, meaning answers that are 0 or 1 cannot be estimated using a beta distribution. This is a problem because a non-trivial amount of participant responses are 0 or 1, as shown in Figure 1.
+
+To account for this, a zero-one-inflated beta (ZOIB) regression model can be used (Heiss, 2021). A beta distribution is defined by the parameters mu and phi, where mu is the mean estimated from the data and phi is the precision or standard error (Robinson, 2014; Murphy, n.d.). A ZOIB regression has two additional parameters, alpha and gamma. The alpha parameter estimates the probability that an observation is at the boundary (0 or 1). Then, the gamma parameter estimates the probability that a boundary observation is 1, similar to a logistic regression model (Vuorre, 2019). Thus, the ZOIB model accounts for the 0s and 1s in the data without "nudging" the data to be within the open (0,1) interval.
+
+#### Distribution of participant ratings vs normal distribution
+
+```{r}
+#| echo: false
+#| collapse: true
+#library(tidyverse)
+
+#create simulated normal distribution and real data df
+#import real data
+rating_metric_distribution <- 
+  human_computer_model_df |>
+  select(rating_metric, participant_rating)
+
+#calculate sd of real data
+data_participantrating_sd = (as.double(rating_metric_distribution$participant_rating))
+data_participantrating_calc_sd = sd(data_participantrating_sd) #28.44
+
+#create sim normal distribution df using rnorm
+rating_metric = rep("simulated_normal_distribution", each=340)
+rating_metric = as.data.frame(rating_metric)
+participant_rating = rnorm(340, mean = 50, sd = 28.44)
+participant_rating = as.data.frame(participant_rating)
+#join the sim participant rating and rownames
+sim_norm_df = cbind(rating_metric, participant_rating)
+
+#join sim distribution to real data 
+data_with_sim_norm <- rbind(rating_metric_distribution, sim_norm_df)
+```
+
+```{r}
+#| warning: false
+
+#library(tidyverse)
+ggplot(data_with_sim_norm, 
+       aes(x= rating_metric, y= participant_rating, color = rating_metric)) + 
+  geom_point(position = "jitter", alpha = 0.7, size = 1.5) +
+  scale_color_manual(values = 
+                       c("Intelligence" = "limegreen", "Professionalism" = "darkgreen",
+                          "Trustworthiness" = "magenta", "Appropriateness" = "purple",
+                          "Friendliness" = "blue","Perceived_Age" = "darkred",
+                          "Naturalness" = "goldenrod", "Authenticity" = "darkgoldenrod",
+                          "SP_specificity" = "darkorange", "SP_vividness" = "sienna",
+                          "simulated_normal_distribution" = "black")) +
+  guides(color="none") +
+  scale_y_continuous(limits = c(0,100), breaks = seq(0, 100, by=10)) +
+  theme_minimal() +
+  scale_x_discrete(limits=
+                     c("Intelligence", "Professionalism", 
+                        "Trustworthiness", "Appropriateness", 
+                        "Friendliness", "Perceived_Age", 
+                        "Naturalness", "Authenticity", 
+                        "SP_specificity", "SP_vividness", 
+                        "simulated_normal_distribution")) +
+  ylab("Participant Rating") +
+  theme(
+    axis.title.x= element_blank(),
+    axis.text.x = 
+                  element_text(angle=30, face = "bold", size = 12, 
+                               hjust=1, vjust=1),
+    axis.title.y = element_text(face = "bold", size = 12)
+  )
+```
+
+#### Figure 1. Distribution of participant ratings compared to a simulated normal distribution
+
+# Model
+
+remember to check for divergences in the model summary in the console, divergence warnings are not printed in the csvs
+
+#### Selection of best-performing model formula
+
+One advantage of Bayesian models is that the benefit of a more complex model can be weighed against its possible generalizeablity. Because Bayesian models are so powerful, packing in every possible predictor is achievable, but this can lead your model to perfectly predict your current data then not generalize to new data, which is therefore a bad model.
+
+This process is called leave-one-out (LOO) cross-validation, and samples from the original dataset are held out of the training model fit. Then, the samples are compared to the model fit to see if they result in the same model estimates. The optimal model will have the balance between least variance *and* least number of parameters.
+
+Cross-validation suggests that the maximal model
+
+The code/mathematical for cross-validation is long, complex, and only necessary to make a mathematical decision on what model is "best", so it's in a separate file titled "google_voices_sona_competing_model_selection.qmd".
+
+### Model Formula
+
+Each indexical field was modeling using the same formula:
+
+participant rating \~ ing use \* computer response \* broadcast context + speaker gender + speaker gender : ing use + speaker gender : computer response + (computer response \| id)
+
+The same model formula was used to estimate the distribution of mu, alpha, and gamma.
+
+> In plain English, rating\~voice_type predicts the mean rating when the voice was human or synthetic. zoi\~voice_type is the probability that the response was at a boundary (0 or 1), and coi\~voice_type is the probability, *if* the response was at a boundary, that the response was 1.
+
+```{r}
+#library(brms)
+#this is the "maximal" model as described in the competing model selection qmd
+#most recent formula decided upon on 11/18/2024
+model_formula <- bf(
+  ratingpercent ~ ingusealpha*computerresponse*broadcastcontext +
+    speakergender:ingusealpha + speakergender:computerresponse +
+    (computerresponse |id),
+  phi ~ 1,
+  coi ~ ingusealpha*computerresponse*broadcastcontext +
+    speakergender:ingusealpha + speakergender:computerresponse +
+    (computerresponse |id),
+  zoi ~ ingusealpha*computerresponse*broadcastcontext +
+    speakergender:ingusealpha + speakergender:computerresponse +
+    (computerresponse |id)
+)
+```
+
+#### Priors
+
+```{r}
+priors = c(brms::set_prior("normal(0, 2)", class = "Intercept"),
+           brms::set_prior("normal(0, 2)", class = "b"),
+           brms::set_prior("normal(0, 2)", class = "sd"),
+           brms::set_prior("normal(0, 2)", class = "Intercept",dpar="phi"),
+           brms::set_prior("normal(0, 2)", class = "Intercept",dpar="zoi"),
+           brms::set_prior("normal(0, 2)", class = "b",dpar="zoi"),
+           brms::set_prior("normal(0, 2)", class = "sd",dpar="zoi"),
+           brms::set_prior("normal(0, 2)", class = "Intercept",dpar="coi"),
+           brms::set_prior("normal(0, 2)", class = "b",dpar="coi"),
+           brms::set_prior("normal(0, 2)", class = "sd",dpar="coi")
+          )
+```
+
+## Status Model
+
+```{r}
+#status data frame
+status_google_voices <- 
+  google_voices_sona_data_wide |>
+  select(c(id:broadcastcontext, Professionalism, Intelligence)) |>
+  pivot_longer(cols = c("Professionalism", "Intelligence"), 
+               names_to = "statusmetrics", values_to = "ratingpercent")
+#status model
+statusfit <- brm(
+  formula = model_formula, 
+  family = zero_one_inflated_beta(),
+  data = status_google_voices, 
+  chains = 4,
+  cores = 4, 
+  warmup = 1000,
+  iter = 2500,
+  control = list(adapt_delta = 0.95),
+  file = "statusfit_sona.RDS",
+  file_refit = "on_change",
+  save_pars = save_pars(all = TRUE),
+  prior = priors
+)
+```
+
+## Credibility Model
+
+```{r}
+#create credibility df
+credibility_google_voices <- 
+  google_voices_sona_data_wide |>
+  select(c(id:broadcastcontext, Trustworthiness, Appropriateness)) |>
+  pivot_longer(cols = c("Appropriateness", "Trustworthiness"), 
+               names_to = "credibilitymetrics", values_to = "ratingpercent")
+#credibility model
+credibilityfit <- brm(
+  formula = model_formula, 
+  family = zero_one_inflated_beta(),
+  data = credibility_google_voices, 
+  chains = 4,
+  cores = 4, 
+  warmup = 1000,
+  iter = 2500,
+  control = list(adapt_delta = 0.95),
+  file = "credibilityfit_sona.RDS",
+  file_refit = "on_change",
+  save_pars = save_pars(all = TRUE),
+  prior = priors
+)
+```
+
+## Humanlikeness Model
+
+```{r}
+#make humanlikeness df
+humanlikeness_google_voices <- 
+  google_voices_sona_data_wide |>
+  select(c(id:broadcastcontext, Naturalness, SP_vividness, SP_specificity, Authenticity)) |>
+  pivot_longer(cols = c("Authenticity", "Naturalness", "SP_vividness", "SP_specificity"), 
+               names_to = "humanlikenessmetrics", values_to = "ratingpercent")
+#humanlikeness model
+humanlikenessfit <- brm(
+  formula = model_formula, 
+  family = zero_one_inflated_beta(),
+  data = humanlikeness_google_voices, 
+  chains = 4,
+  cores = 4, 
+  warmup = 1000,
+  iter = 2500,
+  control = list(adapt_delta = 0.95),
+  file = "humanlikenessfit_sona.RDS",
+  file_refit = "on_change",
+  save_pars = save_pars(all = TRUE),
+  prior = priors
+)
+```
+
+## Friendliness Model
+
+```{r}
+#subset to just friendliness df
+friendliness_google_voices <- 
+  google_voices_sona_data_wide |> 
+  select(c(id:broadcastcontext, Friendliness)) |>
+  rename(ratingpercent = Friendliness)
+
+#friendliness model
+friendlinessfit <- brm(
+  formula = model_formula, 
+  family = zero_one_inflated_beta(),
+  data = friendliness_google_voices, 
+  chains = 4,
+  cores = 4, 
+  warmup = 1000,
+  iter = 2500,
+  control = list(adapt_delta = 0.95),
+  file = "friendlinessfit_sona.RDS",
+  file_refit = "on_change",
+  save_pars = save_pars(all = TRUE),
+  prior = priors
+)
+```
+
+## Perceived Age Model
+
+```{r}
+#subset to just perceived age df
+perceived_age_google_voices <- 
+  google_voices_sona_data_wide |> 
+  select(c(id:broadcastcontext, Perceived_Age)) |>
+  rename(ratingpercent = Perceived_Age)
+#you need to rename perceived age to ratingpercent
+
+#perceived age model
+perceived_agefit <- brm(
+  formula = model_formula, 
+  family = zero_one_inflated_beta(),
+  data = perceived_age_google_voices, 
+  chains = 4,
+  cores = 4, 
+  warmup = 1000,
+  iter = 2500,
+  control = list(adapt_delta = 0.95),
+  file = "perceived_agefit_sona.RDS",
+  file_refit = "on_change",
+  save_pars = save_pars(all = TRUE),
+  prior = priors
+)
+```
+
+# Interpretation of Parameter Means
+
+Below, the summary tables are presented for each of the five models (status, credibility, humanlikeness, friendliness, and perceived age). Each summary table has the same format:
+
+-   rows 1 to 4 are intercepts
+
+-   rows 5 to 24 are mu fixed effects
+
+-   rows 25 to 44 are zoi (alpha) fixed effects
+
+-   rows 45 to 64 are coi (gamma) fixed effects
+
+## Summary tables
+
+Aka model output
+
+```{r}
+#status
+status_summary <- summary(statusfit)
+status_estimated_effects <- round(status_summary$fixed, 2)
+#save model summary as csv
+write.csv(status_estimated_effects, "statusfit_est_effects.csv")
+
+#credibility
+credibility_summary <- summary(credibilityfit)
+credibility_estimated_effects <- round(credibility_summary$fixed, 2)
+#save model summary as csv
+write.csv(credibility_estimated_effects, "credibilityfit_est_effects.csv")
+
+#humanlikeness
+humanlikeness_summary <- summary(humanlikenessfit)
+humanlikeness_estimated_effects <- round(humanlikeness_summary$fixed, 2)
+#save model summary as csv
+write.csv(humanlikeness_estimated_effects, "humanlikenessfit_est_effects.csv")
+
+#friendliness
+friendliness_summary <- summary(friendlinessfit)
+friendliness_estimated_effects <- round(friendliness_summary$fixed, 2)
+#save model summary as csv
+write.csv(friendliness_estimated_effects, "friendlinessfit_est_effects.csv")
+
+#perceived age
+perceived_age_summary <- summary(perceived_agefit)
+perceived_age_estimated_effects <- round(perceived_age_summary$fixed, 2)
+#save model summary as csv
+write.csv(perceived_age_estimated_effects, "perceived_agefit_est_effects.csv")
+```
+
+## Status
+
+### mu (intercept)
+
+The largest effect on listeners' ratings of a speaker's perceived status was news broadcast context (0.17). Overall, speakers received higher ratings of status when listeners heard the news broadcast. There was also a large effect of the interaction between -ing use and news broadcast context. When participants heard the news broadcast, they rated voices that used only the standard variant higher on status metrics than in the radio dj context (0.16). Participants also penalized speakers more when they used 30% -ing in the news broadcast context compared to the radio dj context (-0.12). There was an interaction between speaker gender and 100% -ing use. When female voices used the standard -ing variant, they were rated as more professional compared to males (0.11).
+
+There was also an interaction effect between voices that participants perceived as a computer and -30% –ing use (-0.08). However, the confidence intervals of this effect marginally crossed zero.
+
+```{r}
+#subset into mu
+statusmu <- status_estimated_effects[5:24, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(statusmu)
+#select the effects that are large
+statusmu_large <- statusmu[c(4, 5, 8, 10, 11, 14),]
+#brmplot with the large effects
+brmplot(statusmu_large)
+```
+
+### alpha (zoi)
+
+The largest effect on whether listeners gave floor or ceiling ratings on perceived status was the interaction between news broadcast and 100% -ing use (1.93). Speakers that used only the nonstandard -in variant were more likely to be evaluated using all-or-nothing ratings (1.18).
+
+There were two additional effects that had confidence intervals that marginally crossed zero. Voices that were female were more likely to be rated using all-or-nothing behavior (0.51)!. Additionally, the interaction between news broadcat and 0% -ing use was less likely to be evaluated using floor or ceiling ratings (-1.02).
+
+```{r}
+#subset zoi
+statuszoi <- status_estimated_effects[25:44, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(statuszoi)
+#select the effects that are large
+statuszoi_large <- statuszoi[c(3, 6, 10, 12),]
+#brmplot with the large effects
+brmplot(statuszoi_large)
+```
+
+### gamma (coi)
+
+News broadcast had an effect size of (2.01)!, suggesting that participants were more likely to rate a voice as “perfectly professional” or “perfectly intelligent” when they heard the news broadcast. This confidence interval crosses zero by a fair amount (-0.58 L-CI, 4.64 U-CI), but the effect size is large and has a clear direction towards a positive value. This suggests an effect of news broadcast on listeners’ ratings of perceived status is potentially large but uncertain. 
+
+```{r}
+#subset coi
+statuscoi <- status_estimated_effects[45:64, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(statuscoi)
+#select the effects that are large
+statuscoi_large <- statuscoi[c(5),]
+#brmplot with the large effects
+brmplot(statuscoi_large)
+```
+
+## Credibility
+
+### mu
+
+```{r}
+#subset into mu
+credibilitymu <- credibility_estimated_effects[5:24, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(credibilitymu)
+#select the effects that are large
+credibilitymu_large <- credibilitymu[c(4, 5, 6, 16, 17, 18),]
+#brmplot with the large effects
+brmplot(credibilitymu_large)
+```
+
+The largest effect on participant ratings of credibility was broadcast context, where voices in the news broadcast context were rated as more credible overall (0.19). When participants thought the voice was a computer, they rated it as less credible (-0.14). There was an interaction between speaker gender and 0% -ing use, where female speakers were rated as less credible when they used the nonstandard variant (-0.14). There was a three-way interaction between news broadcast, 100% -ing use, and listeners’ perception that the voice was a computer (0.12). When participants heard a voice they believed was a computer read the news with only the standard -ing variant, they rated those voices more positively. There was also an effect of speaker gender, where female voices were considered less credible (-0.07). However, when listeners perceived the voice as being a computer and the voice was female, they rated the voice as more credible (0.06). 
+
+### alpha (zoi)
+
+```{r}
+#subset zoi
+credibilityzoi <- credibility_estimated_effects[25:44, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(credibilityzoi)
+#select the effects that are large
+credibilityzoi_large <- credibilityzoi[c(5, 7, 9, 10, 18),]
+#brmplot with the large effects
+brmplot(credibilityzoi_large)
+```
+
+The biggest impacts on listeners’ all-or-nothing rating behavior came from interactions between -ing use and their belief that the voice was a computer. Listeners were least likely to show all-or-nothing behavior when rating voices that they perceived as a computer and used 100% the standard -ing variant (-1.58). There was also a three-way interaction between 100% -ing use, belief that the voice was a computer, and news broadcast context (-0.97). However, when participants perceived the voice as a computer and that voice used only the nonstandard -in variant, they were more likely to rate that voice using all-or-nothing behavior (0.97). In the news broadcast, participants were less likely to provide extreme rating values (-0.91).  
+
+There was also an interaction between 100% -ing use and broadcast context, where listeners were less likely to rate voices as floor/ceiling when they used the standard variant in a news broadcast (-0.80!). However, the CIs of this effect marginally crossed zero. 
+
+### gamma (coi)
+
+Voices that participants perceived to be a computer had a large effect on their ratings of credibility and were much more likely to be rated as "not at all trustworthy" or "not at all good for news broadcasting/radio dj" (-3.14). There was also an effect of news broadcast, where participants were more likely to rate a voice as perfectly credible when listening to the news broadcast (2.45).
+
+```{r}
+#subset coi
+credibilitycoi <- credibility_estimated_effects[45:64, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(credibilitycoi)
+#select the effects that are large
+credibilitycoi_large <- credibilitycoi[c(4, 5),]
+#brmplot with the large effects
+```
+
+## Humanlikeness
+
+### mu
+
+```{r}
+#subset into mu
+humanlikenessmu <- humanlikeness_estimated_effects[5:24, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(humanlikenessmu)
+#select the effects that are large
+humanlikenessmu_large <- humanlikenessmu[c(2, 4, 5, 6, 8, 15, 16, 17, 19),]
+#brmplot with the large effects
+brmplot(humanlikenessmu_large)
+```
+
+### alpha (zoi)
+
+```{r}
+#subset into zoi
+humanlikenesszoi <- humanlikeness_estimated_effects[25:44, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(humanlikenesszoi)
+#select the effects that are large
+humanlikenesszoi_large <- humanlikenesszoi[c(1, 4, 5, 6, 7, 9, 13, 15, 17, 18, 20),]
+#brmplot with the large effects
+brmplot(humanlikenesszoi_large)
+```
+
+### gamma (coi)
+
+"Computer" response had a large effect on participant ratings of humanlikeness (-2.95). Female voices were less likely to be rated as "perfectly humanlike" than male ones (-1.49).
+
+```{r}
+#subset coi
+humanlikenesscoi <- humanlikeness_estimated_effects[45:64, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(humanlikenesscoi)
+#select the effects that are large
+humanlikenesscoi_large <- humanlikenesscoi[c(4, 6),]
+#brmplot with the large effects
+brmplot(humanlikenesscoi_large)
+```
+
+## Friendliness (complete)
+
+### mu
+
+Largest effect for friendliness ratings was "computer" response (-0.18). Interaction between 0% ing and female voices had an effect of (-0.16). The interaction of 100% ing and news broadcast had the third-largest effect (-0.12). The interaction of 0% ing and news broadcast had the same magnitude of effect size as 100%ing \* news, but the opposite direction (0.12). The three-way interaction of 30% ing, "computer" response, and news broadcast also had an effect size of (-0.12)!, but the CI marginally crossed zero.
+
+! = CI crossed zero, but marginally
+
+```{r}
+#subset into mu
+friendlinessmu <- friendliness_estimated_effects[5:24, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(friendlinessmu)
+#select the effects that are large
+friendlinessmu_large <- friendlinessmu[c(4, 10, 12, 16, 19),]
+#brmplot with the large effects
+brmplot(friendlinessmu_large)
+```
+
+### alpha (zoi)
+
+Largest effect on zoi for friendliness ratings was the three-way interaction between 100% ing, "computer" response, and news broadcast (-1.78). Second-largest effect was the interaction between 100% ing and news broadcast (1.31). Main effect of news broadcast was third (-0.95)!. Lastly, main effect of female speaker gender had an effect of (0.52)!.
+
+! = CIs cross zero, but marginally
+
+```{r}
+#subset into zoi
+friendlinesszoi <- friendliness_estimated_effects[25:44, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(friendlinesszoi)
+#select the effects that are large
+friendlinesszoi_large <- friendlinesszoi[c(5, 6, 10, 18),]
+#brmplot with the large effects
+brmplot(friendlinesszoi_large)
+```
+
+### gamma (coi)
+
+No clear effects of coi on friendliness ratings.
+
+```{r}
+#subset coi
+friendlinesscoi <- friendliness_estimated_effects[45:64, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(friendlinesscoi)
+```
+
+## Perceived Age (complete)
+
+### mu
+
+The two largest effects were the interaction of -ing use by female voices. Female voices that used 30% -ing were evaluated as younger (-0.05), but female voices that used 0% ing were evaluated as older (0.05). “Computer” response and news broadcast both had an estimated effect size of (0.04). The interaction of “computer” response and female voices had an effect of (-0.03).
+
+```{r}
+#subset into mu
+perceived_agemu <- perceived_age_estimated_effects[5:24, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(perceived_agemu)
+#select the effects that are large
+perceived_agemu_large <- perceived_agemu[c(4, 5, 15, 16, 17),]
+#brmplot with the large effects
+brmplot(perceived_agemu_large)
+```
+
+### alpha (zoi)
+
+No estimated effects for zoi or coi on perceived age.
+
+This makes sense given that all perceived age predictions are between 1 and 61. Maybe (most likely) we need to model perceived age using a different architecture?
+
+```{r}
+#subset into zoi
+perceived_agezoi <- perceived_age_estimated_effects[25:44, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(perceived_agezoi)
+```
+
+### gamma (coi)
+
+Truly zero estimated effects of coi on perceived age.
+
+```{r}
+#subset coi
+perceived_agecoi <- perceived_age_estimated_effects[45:64, 1:4]
+
+#make a first pass brmplot to see what effects are relatively large
+brmplot(perceived_agecoi)
+```
+
+# ggplot of effect sizes
+
+<https://cran.r-project.org/web/packages/tidybayes/vignettes/tidy-brms.html>
+
+# LSA analysis plots
+
+## Status
+
+Prepare status plot dataframe
+
+```{r}
+#make rownames into effect column
+status_plot_df <- cbind(Effect = rownames(statusmu_large), statusmu_large)
+rownames(status_plot_df) <- 1:nrow(status_plot_df)
+
+status_plot_df <- 
+  status_plot_df |>
+  rename(lower_CI = starts_with("l")) |>
+  rename(upper_CI = starts_with("u")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "computerresponse1", "computer response")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "broadcastcontext1", "news broadcast")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "speakergender1", "female voice")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "ingusealpha1", "100% -ing use")) |>
+  mutate(Effect = str_replace_all(Effect,
+                                        "ingusealpha2", "30% -ing use")) |>
+    slice(-3)
+```
+
+```{r}
+ggplot(status_plot_df, aes(Effect, Estimate)) +        
+  geom_point(size = 9, color = "maroon") +
+  geom_hline(yintercept=0, linewidth = 1, color = "#080925") +
+  geom_errorbar(aes(ymin = lower_CI, ymax = upper_CI), 
+                width = .2, size = 2, color = "maroon")  +
+  scale_x_discrete(limits=c("news broadcast",
+                            "100% -ing use:news broadcast",
+                            "30% -ing use:news broadcast",
+                            "computer response",
+                            "100% -ing use:female voice"),
+                   labels=c("news broadcast",
+                            "100% -ing use:\nnews broadcast", 
+                            "30% -ing use:\nnews broadcast",
+                            "computer\n response",
+                            "100% -ing use:\nfemale voice")) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y  = element_text(size = 16, family = "sans", face = "bold", color = "#080925"), 
+    axis.text.x = element_text(size = 14, family = "sans", face = "bold", color = "#080925"), 
+    panel.grid.major = element_line(colour = "#ccc9c7", size= .25),
+        panel.grid.minor = element_line(colour = "#ccc9c7", size = .1),
+        panel.background = element_rect(colour = "white", fill =NA), 
+        panel.border = element_rect(colour = "#ccc9c7", fill= NA, size=1))
+
+ggsave("status_effects_plot.pdf", height = 5.65, width = 11.3, unit = "in", dpi = 600)
+```
+
+## Credibility
+
+Prepare credibility plot dataframe
+
+```{r}
+#make rownames into effect column
+credibility_plot_df <- cbind(Effect = rownames(credibilitymu_large), credibilitymu_large)
+rownames(credibility_plot_df) <- 1:nrow(credibility_plot_df)
+
+credibility_plot_df <- 
+  credibility_plot_df |>
+  rename(lower_CI = starts_with("l")) |>
+  rename(upper_CI = starts_with("u")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "computerresponse1", "computer response")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "broadcastcontext1", "news broadcast")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "speakergender1", "female voice")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "ingusealpha1", "100% -ing use")) |>
+    mutate(Effect = str_replace_all(Effect,
+                                        "ingusealpha3", "0% -ing use"))
+```
+
+```{r}
+ggplot(credibility_plot_df, aes(Effect, Estimate)) +        
+  geom_point(size = 9, color = "sienna") +
+  geom_hline(yintercept=0, linewidth = 1, color = "#080925") +
+  geom_errorbar(aes(ymin = lower_CI, ymax = upper_CI), 
+                width = .2, size = 2, color = "sienna") + 
+  scale_x_discrete(limits=c("news broadcast",
+                            "computer response", 
+                            "100% -ing use:computer response:news broadcast",
+                            "0% -ing use:female voice",
+                            "female voice",
+                            "computer response:female voice"),
+                   labels=c("news broadcast",
+                            "computer\n response", 
+                            "news broadcast:\ncomputer response:\n100% -ing use",
+                            "0% -ing use:\nfemale voice",
+                            "female voice",
+                            "computer response:\nfemale voice")) +
+  theme(
+    axis.title.x = element_blank(),
+    axis.title.y = element_blank(),
+    axis.text.y  = element_text(size = 16, family = "sans", face = "bold", color = "#080925"), 
+    axis.text.x = element_text(size = 14, family = "sans", face = "bold", color = "#080925"), 
+    panel.grid.major = element_line(colour = "#ccc9c7", size= .25),
+        panel.grid.minor = element_line(colour = "#ccc9c7", size = .1),
+        panel.background = element_rect(colour = "white", fill =NA), 
+        panel.border = element_rect(colour = "#ccc9c7", fill= NA, size=1))
+
+ggsave("credibility_effects_plot.pdf", height = 5.65, width = 11.3, unit = "in", dpi = 600)
+```
+
+# — End —
+
+##### Notes for short_hypothesis and conditional_effects plots from previous ZOIB model qmd for santiago
+
+```{r}
+#packages: bmmb short_hypothesis(fit, c("-(ing_use1+ing_use2+ing_use3) = 0"))
+
+avg_slopes(model_beta, newdata = datagrid(quota = c(FALSE, TRUE)))
+
+##this is the greatest plot of all time do not delete it## plot( conditional_effects(intfit, dpar = "mu"), points = TRUE, point_args = list(width = .05, shape = 1) ) ##do not delete##
+```
+
+## Works Cited
+
+Barreda, S., & Silbert, N. (2023). *Bayesian Multilevel Models for Repeated Measures Data:* Variation in parameters ('random effects') and model comparison. Routledge. <https://santiagobarreda.com/bmmrmd/variation-in-parameters-random-effects-and-model-comparison.html#sec-c6-out-sample-crossval>
+
+Bobbit, Z. (2020). Principal Components Analysis in R: Step-by-Step Example. *Statology*. <https://www.statology.org/principal-components-analysis-in-r/>
+
+Bürkner P. C. (2017). brms: An R Package for Bayesian Multilevel Models using Stan. Journal of Statistical Software. 80(1), 1-28. doi.org/10.18637/jss.v080.i01
+
+Heiss, A. A guide to modeling proportions with Bayesian beta and zero-inflated beta regression models. <https://www.andrewheiss.com/blog/2021/11/08/beta-regression-guide/>
+
+James, G., Witten, D., Hastie, T., & Tibshirani, R. (2023). *An introduction to statistical learning: with applications in R*. Springer.
+
+Lilley et al. (under review). Social evaluation of text-to-speech voices by adults and children.
+
+Murphy, T.J. JABSTB: Statistical Design and Analysis of Experiments with R. <https://tjmurphy.github.io/jabstb/dispersion.html#precision-and-accuracy>
+
+Pycha, A., & Zellou, G. (2024). The influence of accent and device usage on perceived credibility during interactions with voice-AI assistants. *Frontiers in Computer Science*, *6*.
+
+Robinson, D (2014). Understanding the beta distribution (using baseball statistics). <http://varianceexplained.org/statistics/beta_distribution_and_baseball/>
+
+Tang, Y., Horikoshi, M., & Li, W. (2016). ggfortify: unified interface to visualize statistical results of popular R packages. *R J.*, *8*(2), 474.Tang, Y., Horikoshi, M., & Li, W. (2016). ggfortify: unified interface to visualize statistical results of popular R packages. *R J.*, *8*(2), 474.
+
+Wehrens, R., & Mevik, B. H. (2007). The pls package: principal component and partial least squares regression in R.
+
+Vuorre, M. 2019. “How to Analyze Visual Analog (Slider) Scale Data?” February 18, 2019. <https://vuorre.com/posts/2019-02-18-analyze-analog-scale-ratings-with-zero-one-inflated-beta-models.>
+
+## Appendix
+
+```{r}
+print(var_explained_df)
+```
+
+#### Table A. Variance explained by each PC
+
+Percentage of variance in the data explained by each principal component.
+
+```{r}
+autoplot(pca_results, x = 3, y = 4, loadings = TRUE, loadings.label = TRUE, 
+         loadings.color = "brown", loadings.label.color = "navy", 
+         loadings.label.size = 4, loadings.label.hjust = -0.1, 
+         color = "NA", fill = "tan", shape = 21,  alpha = 0.9) +
+  theme_bw()
+```
+
+#### Figure B. Biplot of PC3 and PC4
+
+## Advice I've received on how to approach this data (so far)
+
+### From readings
+
+zoi = alpha, whether a response was a 0 or 1
+
+coi = gamma, whether a value was actually 1
+
+### From Santiago
+
+-   calculate proportion of 0 and 1 in the excel sheet to investigate floor and ceiling ratings
+
+-   use the normal distribution for priors to be more conservative
+
+    -   appropriate in this case because we will likely be estimating more parameters per person than observations
+
+-   simpler model might better and with a random effects structure
+
+-   ranefs will make the CIs wider but it shouldn't affect the effect size
+
+-   use berber paper as a model for how you're going to present this in your paper
+
+    -   check paper for explanation of COI interpretation
+
+    -   check plot in the berber paper
+
+-   grep with zoi/coi/mu/phi and then make a new dataframe, then make plots for each of them
+
+**Continue explaining the two options:**
+
+explain what averaging would mean in this context
+
+**Inclusion of Related Social Evaluations as Predictors**
+
+model it in long version with rating_metric
+
+subset (trustworthiness and appropriateness)
+
+response \~ trustworthiness\*appropriateness + inguse + etc
+
+if there is no difference between the two rating metrics, then there won't be an interaction effect
+
+### From StatLab
+
+#### "Gold standard" way to model potentially colinear variables
+
+-   Make models with a predictor for rating metrics that appear correlated
+
+-   you can choose the ones that make the most sense so that you don't have to do all of them
+
+-   model it using beta regression is still fine
+
+-   Keep phi \~ 1 for Occam's razor reasons and it makes the results easier to explain/interpret
+
+-   look at posteriors distributions for these estimates, if the fixed effect professionalism has a mean is far from zero and tight variance, that would suggest a correlation. if the mean is near zero and wide in the posterior distrubtion, that would suggest there's not really a correlation with intelligence
+
+The hypothetical formula you would use to do this, according to statlab:
+
+intelligence \~ ing_use_alpha \* computer_response \* gender \* experiment + professionalism
+
+naturalness \~ ing_use_alpha \* computer_response \* gender \* experiment + authenticity
