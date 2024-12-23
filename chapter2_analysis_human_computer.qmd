@@ -30,138 +30,15 @@ options(contrasts = rep("contr.sum", 2))
 #devtools::install_github("https://github.com/santiagobarreda/bmmb.git")
 ```
 
-# 
-
-##model alpha meaning## #a = hundred #b = thirty #c = zero #d = seventy (ref)
-
 # Data
 
-# Participant Pool Selection
-
-##### Perceived age outliers
-
-Participants that had outlier responses to perceived age were excluded from the study. This was calculated for this data (since the google voices are different voices, therefore the mean age might be different).
-
 ```{r}
-#|
-#| collapse = TRUE
-setwd("../data/")
-human_computer_df_no_exclusions <- read_csv("human_computer_4levels_5-27-24.csv")
-
-age_data = 
-  human_computer_df_no_exclusions |>
-  filter(rating_metric == "Perceived_Age")
-
-#calculate mean and sd
-mean = mean(age_data$participant_rating)
-sd = sd(age_data$participant_rating)
-#calculate age cutoffs
-youngestsd3 = mean - sd*3
-oldestsd3 = mean + sd*3
-
-#histogram with normal dist of ages
-ggplot(age_data, aes(participant_rating)) +
-  geom_histogram(aes(y = after_stat(density)), 
-                 fill='lightgray', col='black', binwidth = 5, linewidth = 0.5) +
-  xlab("Age in Years") +
-  geom_vline(aes(xintercept = mean + sd*2),
-             colour = "blue", linewidth = 1) +
-  geom_vline(aes(xintercept = mean - sd*2),
-             colour = "blue", linewidth = 1) + 
-    geom_vline(aes(xintercept = mean + sd*3),
-             colour = "red", linewidth = 1) +
-  geom_vline(aes(xintercept = mean - sd*3),
-             colour = "red", linewidth = 1) +
-  stat_function(fun = dnorm, args = 
-                  list(mean=mean(age_data$participant_rating), 
-                       sd=sd(age_data$participant_rating)), 
-                linewidth = 1) +
-  theme_bw()
+#| warning: false
+setwd("../data")
+human_computer_df <- read_csv("human_computer_df.csv")
 ```
 
-### Concatenate and eradicate all excluded ids
-
-```{r}
-#answer for any perceived age question was less than 1 or greater than 75
-age_outliers <-
-  age_data |>
-  filter(participant_rating < 1 | participant_rating >= 75) |>
-  select(id)
-
-#didn't complete experiment
-not_finished <- c(326065, 354502, 355669, 343807, 355858, 359242, 
-  363352, 346627, 355327, 351868, 353830, 358423)
-
-#duration was excluded if greater than 3 hours
-too_long <- c(355819, 348124, 326065, 339397, 361081)
-
-#incorrect answer to SPIN question (happened to be only "about the roast".)
-wrong_roast <- c(302617, 325777)
-
-#answered yes to hearing difficulty
-hearing_difficulty <- c(359344, 343684, 335776, 320800, 357493)
-
-#strongest language other than english 
-strongest_language_not_english <- c(325777, 335782, 341908, 364831, 349696, 327160, 355750, 359449, 336940, 360967, 348124, 339397)
-
-#concatenate all types of exclusions together
-excluded_ids <- unique(
-  unlist(
-  c(age_outliers, not_finished, too_long, wrong_roast, 
-    hearing_difficulty, strongest_language_not_english)))
-
-#confirm this is a dataframe of a length that is sensible
-check_excluded_ids <-
-  human_computer_df_no_exclusions |>
-  group_by(id) |>
-  filter(!id %in% excluded_ids)
-#write_csv(check_excluded_ids, "check.csv")
-#because I haven't looked at this data in such a long time, I opened it in excel and manually checked that every single id that was in the 'excluded_ids' list was truly excluded. 
-```
-
-## Data after all exclusions
-
-```{r}
-#| message: false
-setwd("../data/")
-human_computer_df <- 
-  read_csv("human_computer_4levels_5-27-24.csv") |>
-  filter(!id %in% excluded_ids)
-write_csv(human_computer_df, "human_computer_df.csv")
-```
-
-# this is an identical copy of the working draft from chapter 3
-
-# Current Study
-
-> The design for this study was modeled after the classic "sociolinguistic monitor" studies by Labov et al. (2006, 2011). In those studies, Labov et al. found that participants rated a female speaker as less professional and less appropriate for a news broadcasting position when she used the nonstandard -in variant (for example, *talkin'*). We expect to find this same pattern in our study, and predict that synthetic voices will also be evaluated as less appropriate and less professional when they use the nonstandard variant.
-
-Participants (n= They rated the voices one-at-a-time immediately after listening to the recording for each voice. Participants were not informed whether the voices they were hearing would be synthetic or human voices. At the end of the study after they had heard all four voices, participants listened to a brief clip of each voice again and selected whether they thought it was human or computer.
-
-We collected listeners' social evaluations on ten rating categories. Participants answered each rating question one at a time on a sliding scale from 0 to 100. They used the sliding scale to answer the following questions:
-
-1.  How professional is this voice?
-2.  How intelligent is this voice?
-3.  Is this voice good for a news broadcasting position?
-4.  How trustworthy is this voice?
-5.  How authentic is this voice?
-6.  How friendly is this voice?
-7.  How natural is this voice?
-8.  How old does this voice sound?
-9.  How vividly were you able to mentally imagine the person who was speaking?
-10. How much did you feel the voice was talking to you specifically?
-
-Questions nine and ten were adapted from the "social presence" questionnaire developed by Nass and Brave (2005) and assess how "real" a synthetic voice sounded. For brevity, questions nine and ten are referred to as the "social presence" questions in the discussion below.
-
-Prior sociolinguistic research has shown that social-indexical traits can be highly covariant, and that listeners socially evaluate a speaker on a field of related traits rather than each trait being evaluated independently of the others (Eckert, 2008). In the current study, we find that every rating metric is significantly correlated (p \< 0.001), suggesting that the variables are highly co-linear.
-
-# Results
-
-## Principal Component Analysis
-
-Principal Component Analysis (PCA) is an unsupervised machine learning technique that reduces high-dimensional data into a smaller set of component parts. PCA is an ideal choice for understanding relationships between variables when there is a high degree of co-linearity and when the variance in the data can be well-explained by a small number of dimensions, especially when the number of observations is relatively small compared to the number of variables. PCA does not predict the response variable; it estimates the relationships between a participant's evaluation of each rating metric.
-
-Principal components are rank-ordered based on the direction of the data that have the most variance. The first principal component accounts for the greatest amount of variance, the second principal component accounts for the second-greatest amount of variance, and so on. The total number of principal components that can be estimated is equal to the number of predictors.
+# Principal Component Analysis
 
 ##### PCA math
 
@@ -170,7 +47,7 @@ Principal components are rank-ordered based on the direction of the data that ha
 #library(stats)
 #create pca dataframe = contains only the (percent) rating metrics and their numerical values
 human_computer_pca <- 
-  human_computer_model_df |>
+  human_computer_df |>
   pivot_wider(names_from = rating_metric, 
               values_from = participant_rating, 
               id_cols = c(id,voice)) |>
@@ -184,10 +61,6 @@ pca_results$rotation <- -1*pca_results$rotation
 # pca_results$x prints the rotation for each observation (6440x10), so this is not useful to report in a table.
 # pca_results$rotation prints the observations summarized by each rating metric (10x10). This would probably be useful only to people like Santiago, so it is included as a table in the Appendix. 
 ```
-
-### Variance explained by each principal component
-
-Figure 2 depicts what percentage of the variance in the data is explained by each principal component. The amount of variance explained by the principal components is relative to how many principal components have been estimated; here, it is apparent that the first principal component explains a large amount of the variance (55.05%) out of a possible ten components. The second principal component explains 12.18% of the variance. The third principal component explains 9.73% of the variance. The fourth to tenth principal components each explain a marginal amount of variance in the data, and visual inspection of the biplot between principal components 3 and 4 (Figure B in the Appendix) suggests that the fourth principal component does not meaningfully change the groupings of the evaluation categories compared to the first through third components. The percentage of variance explained by each of the ten principal components is displayed in Table B of the Appendix.
 
 ```{r}
 #library(stats)
@@ -210,26 +83,14 @@ var_explained_df %>%
   theme_bw()
 ```
 
-#### Figure 2. Variance explained
-
-Percentage variance explained by each principal component.
+#### Figure 2. Variance explained, age included
 
 ### Dimension Reduction of Rating Metrics
-
-**Explain the Graphs and how to read them**
-
-Because PCA can only estimate directions, the researcher is required to interpret what the resulting dimensions mean. Figure 2 depicts the eigenvector loadings for the directions of the first two principal components.
-
-The first principal component explains 55.05% of the variance in the data and is primarily responsible for the grouping distinction between "perceived age" and the other rating metrics.
-
-The second principal component explains 12.18% of the variance in the data and appears to group the rating metrics into three categories: status, solidarity, and credibility. Status refers to the social prestige that a speaker carries, which explains the relationship between the intelligence and professionalism rating metrics. The second principal component closely relates perceived age to professionalism and intelligence as well, which may be consistent with the notion that older speakers have higher social status. The second principal component also closely related trustworthiness and appropriateness for a news broadcasting position. Pycha and Zellou (2024) found that listeners vary in how credible they consider a synthetic voice based on its regional accent, and here we propose trustworthiness and appropriateness are congruent to listeners' perceptions of credibility in the Pycha and Zellou (2024) study. Lastly, the second principal component also closely groups naturalness, friendliness, and authenticity, as well as the two social presence questions. We suggest these related rating metrics are indices of how much a listener felt the speaker socially aligned with them, which can be thought of as solidarity with the speaker (Lambert et al., 1960).
-
-More generally, the PCA loadings and the resulting grouping of the social evaluation questions are in line with previous research on social categorization of synthetic voices (Lilley et al., under review; Nass and Brave, 2005; Pycha and Zellou, 2024).
 
 ```{r}
 #library(ggplot)
 #library(ggfortify)
-autoplot(pca_results, scale = TRUE, loadings = TRUE, loadings.label = TRUE, 
+autoplot(pca_results, x = 1, y =2, scale = TRUE, loadings = TRUE, loadings.label = TRUE, 
          loadings.color = "darkgreen", loadings.label.color = "navy", 
          loadings.label.size = 4, loadings.label.hjust = -0.1, 
          color = "NA", fill = "coral", shape = 21,  alpha = 0.9) +
@@ -237,29 +98,50 @@ autoplot(pca_results, scale = TRUE, loadings = TRUE, loadings.label = TRUE,
 # biplot(pca_results) works equivalently, but I use autoplot() for ggplot options. 
 ```
 
-#### Figure 2. Biplot of PC1 and PC2
+#### Figure 2. Biplot of PC1 and PC2, age included
 
-The third principal component groups the rating metrics into three categories: age, social traits, and humanlikeness. Principal component three reflects a close relationship between authenticity, naturalness, and the two social presence questions. The social presence questions were developed to test how "real" a computer voice sounded, so it makes sense that they would cluster together with naturalness and authenticity. In theory, the "authenticity" of a voice could be interpreted to mean whether the voice is "real" (as in humanlike) or "truthful," and the relationship between variables in principal component three suggests that listeners interpreted "authenticity" as congruent to "real." Principal component three also clusters intelligence, professionalism, appropriateness, and trustworthiness together. These evaluation characteristics are social traits and relate to a listener's belief about a speaker's personal qualities. In the third principal component, friendliness becomes more closely related to trustworthiness and appropriateness compared to PC2. The changing direction of friendliness along the three princpal components suggests that it is evaluated distinctly from the other social characteristics, and is likely the closest measure of solidarity in this study.
-
-Listener evaluation of perceived age appears to vary independently of the social traits and humanlikeness groupings. Figure 3 shows the relationship between the first and third principal components. Note that the x-axis represents the first principal component, which has not changed from Figure 2. To view a plot of principal components two and three, see Figure A in the Appendix.
+## PCA - age excluded
 
 ```{r}
-autoplot(pca_results, x = 3, y = 2, scale = TRUE, loadings = TRUE, loadings.label = TRUE, 
-         loadings.color = "darkgreen", loadings.label.color = "navy", 
-         loadings.label.size = 4, loadings.label.hjust = -0.1, 
-         color = "NA", fill = "coral", shape = 21,  alpha = 0.9) +
+#pca math
+human_computer_pca_noage <- 
+  human_computer_df |>
+  pivot_wider(names_from = rating_metric, 
+              values_from = participant_rating, 
+              id_cols = c(id,voice)) |>
+  select(!c(voice, id, Perceived_Age))
+
+pca_results_noage <- prcomp(human_computer_pca_noage, scale = TRUE)
+pca_results_noage$x <- -1*pca_results_noage$x
+pca_results_noage$rotation <- -1*pca_results_noage$rotation
+var_explained_df_noage <- data.frame(Principal_Component = paste0("PC",1:9),
+                               Variance_Explained = 
+                                 (pca_results_noage$sdev)^2/sum((pca_results_noage$sdev)^2))
+#variance explained by pca math
+var_explained_df_noage %>%
+  ggplot(aes(x=Principal_Component,y=Variance_Explained, group=1)) +
+  geom_point(size=4, color = "blue") +
+  geom_line(color = "blue", alpha = .8) +
+  scale_x_discrete(limits=
+                     c("PC1", "PC2", "PC3", "PC4", "PC5", 
+                       "PC6", "PC7", "PC8", "PC9")) +
+  labs(title="Scree plot: PCA on scaled data",
+       y = "Percent variance explained", 
+       x = "Principal Component") +
   theme_bw()
 ```
 
-#### Figure 3. Biplot of PC2 and PC3
+```{r}
+autoplot(pca_results_noage, x = 1, y = 2, scale = TRUE, loadings = TRUE, loadings.label = TRUE, 
+         loadings.color = "blue", loadings.label.color = "navy", 
+         loadings.label.size = 4, loadings.label.hjust = -0.1, 
+         color = "NA", fill = "magenta", shape = 21,  alpha = 0.9) +
+  theme_bw()
+```
+
+#### Figure 3. Biplot of PC1 and PC2 when age is not included
 
 ### Reduction into Indexical Fields
-
-The principal component analysis makes it clear that some rating metrics are closely co-linear and likely suggest those rating metrics likely address the same social evaluation. For example, it is clear that "trustworthiness" and "appropriateness for news broadcasting" are clustered together based on both PC2 and PC3, which provides strong support that those two rating questions occupy the same indexical field in the mind of the listener.
-
-Because the main aim of this study is not to evaluate "trustworthiness" per se but rather the broader indexical associations associated with the -ing variable, it is beneficial to collapse the rating metrics into meaningful groups rather than ten interrelated categories. This results in more observations per indexical field and increases the generalizability of the results. In fact, by aggregating responses to questions that were shown to be semantically equivalent in the PCA it decreases the likelihood of finding false positive effects; if "trustworthiness" and "appropriateness" both represent an underlying judgement of credibility but "trustworthiness" happens to appear statistically meaningful and "appropriateness" does not, this could lead to the incorrect interpretation that variation in -ing usage affects listeners' evaluations of credibility.
-
-We considered the first, second, and third principal components in clustering the ten rating metrics into indexical fields. This resulted in five social evaluation categories, which can be seen in Table 2. "Friendliness" remains its own evaluation category because its position between the 2nd and 3rd principal components situate it with two different groups of evaluations, whereas the other nine rating metrics remained consistent in their clustering across PC2 and PC3.
 
 ```{r}
 collapsed_metrics = c("Intelligence, Professionalism", "Appropriateness", "Trustworthiness", "Naturalness, Vividness, Specificity, Authenticity", "Friendliness", "Perceived Age")
@@ -269,17 +151,7 @@ pca_collapsing_df <- data.frame(indexical_evaluation, collapsed_metrics)
 print(pca_collapsing_df)
 ```
 
-There are two approaches we can take to account for the co-linearity of the rating metrics: 1) modeling the two rating metrics together as the indexical field, or 2) including the co-linear rating metrics in the same regression model, and testing if there is an interaction effect between the two rating metrics.
-
-## Bayesian Regression Modeling
-
-We used the {brms} package in r to model the data (Burkner, 2017).
-
-#### Zero-One Inflated Beta (ZOIB) Regression
-
-Beta regression is an appropriate choice for sliding-scale data because participant responses are unlikely to be normally distributed for two reasons: 1.), the scale is bounded at 0 and 100, and 2.), participant responses to sliding scales tend to be skewed (Vuorre, 2019). Beta regression is a model of data in the open (0,1) interval, meaning answers that are 0 or 1 cannot be estimated using a beta distribution. This is a problem because a non-trivial amount of participant responses are 0 or 1, as shown in Figure 1.
-
-To account for this, a zero-one-inflated beta (ZOIB) regression model can be used (Heiss, 2021). A beta distribution is defined by the parameters mu and phi, where mu is the mean estimated from the data and phi is the precision or standard error (Robinson, 2014; Murphy, n.d.). A ZOIB regression has two additional parameters, alpha and gamma. The alpha parameter estimates the probability that an observation is at the boundary (0 or 1). Then, the gamma parameter estimates the probability that a boundary observation is 1, similar to a logistic regression model (Vuorre, 2019). Thus, the ZOIB model accounts for the 0s and 1s in the data without "nudging" the data to be within the open (0,1) interval.
+# Bayesian Regression Modeling
 
 #### Distribution of participant ratings vs normal distribution
 
@@ -308,12 +180,9 @@ sim_norm_df = cbind(rating_metric, participant_rating)
 
 #join sim distribution to real data 
 data_with_sim_norm <- rbind(rating_metric_distribution, sim_norm_df)
-```
 
-```{r}
-#| warning: false
 
-#library(tidyverse)
+#plot distribution of data
 ggplot(data_with_sim_norm, 
        aes(x= rating_metric, y= participant_rating, color = rating_metric)) + 
   geom_point(position = "jitter", alpha = 0.7, size = 1.5) +
@@ -350,45 +219,17 @@ ggplot(data_with_sim_norm,
 
 remember to check for divergences in the model summary in the console, divergence warnings are not printed in the csvs
 
-#### Selection of best-performing model formula
-
-One advantage of Bayesian models is that the benefit of a more complex model can be weighed against its possible generalizeablity. Because Bayesian models are so powerful, packing in every possible predictor is achievable, but this can lead your model to perfectly predict your current data then not generalize to new data, which is therefore a bad model.
-
-This process is called leave-one-out (LOO) cross-validation, and samples from the original dataset are held out of the training model fit. Then, the samples are compared to the model fit to see if they result in the same model estimates. The optimal model will have the balance between least variance *and* least number of parameters.
-
-Cross-validation suggests that the maximal model
-
-The code/mathematical for cross-validation is long, complex, and only necessary to make a mathematical decision on what model is "best", so it's in a separate file titled "google_voices_sona_competing_model_selection.qmd".
+## Selection of best-performing model formula
 
 ### Model Formula
 
 Each indexical field was modeling using the same formula:
 
-participant rating \~ ing use \* computer response \* broadcast context + speaker gender + speaker gender : ing use + speaker gender : computer response + (computer response \| id)
+`model formula goes here`
 
 The same model formula was used to estimate the distribution of mu, alpha, and gamma.
 
-> In plain English, rating\~voice_type predicts the mean rating when the voice was human or synthetic. zoi\~voice_type is the probability that the response was at a boundary (0 or 1), and coi\~voice_type is the probability, *if* the response was at a boundary, that the response was 1.
-
-```{r}
-#library(brms)
-#this is the "maximal" model as described in the competing model selection qmd
-#most recent formula decided upon on 11/18/2024
-model_formula <- bf(
-  ratingpercent ~ ingusealpha*computerresponse*broadcastcontext +
-    speakergender:ingusealpha + speakergender:computerresponse +
-    (computerresponse |id),
-  phi ~ 1,
-  coi ~ ingusealpha*computerresponse*broadcastcontext +
-    speakergender:ingusealpha + speakergender:computerresponse +
-    (computerresponse |id),
-  zoi ~ ingusealpha*computerresponse*broadcastcontext +
-    speakergender:ingusealpha + speakergender:computerresponse +
-    (computerresponse |id)
-)
-```
-
-#### Priors
+> In plain English, rating\~voice_type predicts the mean rating when the voice was human or synthetic. zoi\~voice_type is the probability that the response was at a boundary (0 or 1), and coi\~voice_type is the probability, *if* the response was at a boundary, that the response was 1.Priors
 
 ```{r}
 priors = c(brms::set_prior("normal(0, 2)", class = "Intercept"),
@@ -832,7 +673,7 @@ brmplot(perceived_agecoi)
 
 <https://cran.r-project.org/web/packages/tidybayes/vignettes/tidy-brms.html>
 
-# LSA analysis plots
+# Effect Size Plots
 
 ## Status
 
@@ -990,77 +831,3 @@ print(var_explained_df)
 ```
 
 #### Table A. Variance explained by each PC
-
-Percentage of variance in the data explained by each principal component.
-
-```{r}
-autoplot(pca_results, x = 3, y = 4, loadings = TRUE, loadings.label = TRUE, 
-         loadings.color = "brown", loadings.label.color = "navy", 
-         loadings.label.size = 4, loadings.label.hjust = -0.1, 
-         color = "NA", fill = "tan", shape = 21,  alpha = 0.9) +
-  theme_bw()
-```
-
-#### Figure B. Biplot of PC3 and PC4
-
-## Advice I've received on how to approach this data (so far)
-
-### From readings
-
-zoi = alpha, whether a response was a 0 or 1
-
-coi = gamma, whether a value was actually 1
-
-### From Santiago
-
--   calculate proportion of 0 and 1 in the excel sheet to investigate floor and ceiling ratings
-
--   use the normal distribution for priors to be more conservative
-
-    -   appropriate in this case because we will likely be estimating more parameters per person than observations
-
--   simpler model might better and with a random effects structure
-
--   ranefs will make the CIs wider but it shouldn't affect the effect size
-
--   use berber paper as a model for how you're going to present this in your paper
-
-    -   check paper for explanation of COI interpretation
-
-    -   check plot in the berber paper
-
--   grep with zoi/coi/mu/phi and then make a new dataframe, then make plots for each of them
-
-**Continue explaining the two options:**
-
-explain what averaging would mean in this context
-
-**Inclusion of Related Social Evaluations as Predictors**
-
-model it in long version with rating_metric
-
-subset (trustworthiness and appropriateness)
-
-response \~ trustworthiness\*appropriateness + inguse + etc
-
-if there is no difference between the two rating metrics, then there won't be an interaction effect
-
-### From StatLab
-
-#### "Gold standard" way to model potentially colinear variables
-
--   Make models with a predictor for rating metrics that appear correlated
-
--   you can choose the ones that make the most sense so that you don't have to do all of them
-
--   model it using beta regression is still fine
-
--   Keep phi \~ 1 for Occam's razor reasons and it makes the results easier to explain/interpret
-
--   look at posteriors distributions for these estimates, if the fixed effect professionalism has a mean is far from zero and tight variance, that would suggest a correlation. if the mean is near zero and wide in the posterior distrubtion, that would suggest there's not really a correlation with intelligence
-
-The hypothetical formula you would use to do this, according to statlab:
-
-intelligence \~ ing_use_alpha \* computer_response \* gender \* experiment + professionalism
-
-naturalness \~ ing_use_alpha \* computer_response \* gender \* experiment + authenticity

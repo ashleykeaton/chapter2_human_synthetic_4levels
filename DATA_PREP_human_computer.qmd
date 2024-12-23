@@ -1,0 +1,165 @@
+---
+title: "DATA_PREP_human_computer.qmd"
+format: html
+editor: visual
+---
+
+#### Required Packages and Options
+
+```{r}
+#| echo: false
+#| message: false
+library(tidyverse)
+library(ggfortify)
+library(stats)
+library(googlesheets4)
+library(brms)
+library(bmmb)
+options(contrasts = rep("contr.sum", 2))
+
+#you may need to reinstall bmmb periodically after updating r or rstudoio
+#library(devtools)
+#devtools::install_github("https://github.com/santiagobarreda/bmmb.git")
+```
+
+# Data
+
+This file contains less code/data transformation than for chapter 3, because I did some of the data transformation back in May 2024 (before I learned about taking notes, quarto documents, etc. It was a transitional time where I was learning how to write code with good style and therefore had a painful period of not-good, very disorganized code).
+
+This document mathematically analyzes what a perceived age outlier is in this study and excludes those participant ids (see **Perceived age outliers**). The next section ensures that *all* of the bad ids are excluded, which in this case I did by checking the unedited qualitrics output against what I'd existingly excluded in May 2024. This takes our total participant pool for this experiment to n = 84 (see **Concatenate and eradicate all excluded ids**). The section **Save data after all exclusions**, naturally, saves csvs of the data now that it has had the appropriate exclusions.
+
+-   `human_computer_df` **filters out the excluded ids**, converts all variable names to lowercase (brms likes lowercase) and divides `participant_rating` by 100 because values must be between 0 and 1 to be estimatable in ZOIB models.
+
+-   `human_computer_wide` pivots the rating categories in `rating_metric` into their own variable names (total of 10).
+
+-   `human_computer_model_df`
+
+# Participant Pool Selection
+
+## Perceived age outliers
+
+Participants that had outlier responses to perceived age were excluded from the study. This was calculated for this data (since the google voices are different voices, therefore the mean age might be different).
+
+```{r}
+#| message = false
+#| collapse = true
+setwd("../data/")
+human_computer_df_no_exclusions <- read_csv("human_computer_4levels_5-27-24.csv")
+
+age_data = 
+  human_computer_df_no_exclusions |>
+  filter(rating_metric == "Perceived_Age")
+
+#calculate mean and sd
+mean = mean(age_data$participant_rating)
+sd = sd(age_data$participant_rating)
+#calculate age cutoffs
+youngestsd3 = mean - sd*3
+oldestsd3 = mean + sd*3
+
+#histogram with normal dist of ages
+ggplot(age_data, aes(participant_rating)) +
+  geom_histogram(aes(y = after_stat(density)), 
+                 fill='lightgray', col='black', binwidth = 5, linewidth = 0.5) +
+  xlab("Age in Years") +
+  geom_vline(aes(xintercept = mean + sd*2),
+             colour = "blue", linewidth = 1) +
+  geom_vline(aes(xintercept = mean - sd*2),
+             colour = "blue", linewidth = 1) + 
+    geom_vline(aes(xintercept = mean + sd*3),
+             colour = "red", linewidth = 1) +
+  geom_vline(aes(xintercept = mean - sd*3),
+             colour = "red", linewidth = 1) +
+  stat_function(fun = dnorm, args = 
+                  list(mean=mean(age_data$participant_rating), 
+                       sd=sd(age_data$participant_rating)), 
+                linewidth = 1) +
+  theme_bw()
+```
+
+## Concatenate and eradicate all excluded ids
+
+```{r}
+#| collapse: true
+#answer for any perceived age question was less than 1 or greater than 75
+age_outliers <-
+  age_data |>
+  filter(participant_rating < 1 | participant_rating >= 75) |>
+  select(id)
+
+#didn't complete experiment
+not_finished <- c(326065, 354502, 355669, 343807, 355858, 359242, 
+  363352, 346627, 355327, 351868, 353830, 358423)
+
+#duration was excluded if greater than 3 hours
+too_long <- c(355819, 348124, 326065, 339397, 361081)
+
+#incorrect answer to SPIN question (happened to be only "about the roast".)
+wrong_roast <- c(302617, 325777)
+
+#answered yes to hearing difficulty
+hearing_difficulty <- c(359344, 343684, 335776, 320800, 357493)
+
+#strongest language other than english 
+strongest_language_not_english <- c(325777, 335782, 341908, 364831, 349696, 327160, 355750, 359449, 336940, 360967, 348124, 339397)
+
+#concatenate all types of exclusions together
+excluded_ids <- unique(
+  unlist(
+  c(age_outliers, not_finished, too_long, wrong_roast, 
+    hearing_difficulty, strongest_language_not_english)))
+
+#confirm this is a dataframe of a length that is sensible
+check_excluded_ids <-
+  human_computer_df_no_exclusions |>
+  group_by(id) |>
+  filter(!id %in% excluded_ids)
+#write_csv(check_excluded_ids, "check.csv")
+#because I haven't looked at this data in such a long time, I opened it in excel and manually checked that every single id that was in the 'excluded_ids' list was truly excluded. 
+```
+
+# Save data after all exclusions
+
+```{r}
+#| message: false
+#| warning: false
+setwd("../data/")
+human_computer_df <- 
+  read_csv("../data/human_computer_4levels_5-27-24.csv") |>
+  rename_with(tolower) |>
+  #divide participant ratings by 100 for modeling purposes
+  mutate(participant_rating = participant_rating/100)
+
+#write_csv(human_computer_df, "human_computer_df.csv")
+
+#create wider df and save as csv
+human_computer_wide_df <-
+  human_computer_df |>
+  pivot_wider(names_from = rating_metric, 
+              values_from = participant_rating, 
+              id_cols = c(id, firstblock, voicetype, inguse, voice)) |>
+  rename_with(tolower)
+#write_csv(human_computer_wide_df, "human_computer_wide_df.csv")
+
+#add ingusealpha column for use during modeling
+human_computer_model_df <- 
+  read_csv("../data/human_computer_wide_df.csv") |>
+  rename(
+    perceivedage = perceived_age, vividness = sp_vividness, specificity = sp_specificity) |>
+  #create new column so that ing_use remains in the df without the leading letters in
+  #ingusealpha
+  mutate(ingusealpha = inguse, 
+         .after = inguse) |>
+  #add the alpha characters to the ingusealpha column
+  mutate(ingusealpha = str_replace_all(ingusealpha,
+                                        "hundred", "a_hundred")) |>
+  mutate(ingusealpha = str_replace_all(ingusealpha, 
+                                       "thirty", "b_thirty")) |>
+  mutate(ingusealpha = str_replace_all(ingusealpha, 
+                                       "zero", "c_zero")) |>
+  mutate(ingusealpha = str_replace_all(ingusealpha, 
+                                       "seventy", "d_seventy"))
+write_csv(human_computer_model_df, "human_computer_model_df.csv")
+```
+
+# 
